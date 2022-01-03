@@ -2,7 +2,28 @@
 name = "serde_mol2"
 version = "0.1.0"
 edition = "2021"
+authors = ["Jaroslaw Kalinowski <jaroslaw.kalinowski@csc.fi>"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[package.metadata.release]
+dev-version = false
+publish = false # handled by GitHub Actions
+push = true
+
+[package.metadata.maturin]
+classifier = [
+  "Programming Language :: Rust",
+  "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.6"
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
+clap = "2.32.0"
+lazy_static = "1.4.0"
+pyo3 = { version = "0.15", features = ["extension-module", "serde"] }
+regex = "1"
+scan_fmt = "0.2.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.26"
