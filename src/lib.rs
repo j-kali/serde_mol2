@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::os::unix::fs::PermissionsExt;
 use zstd;
 
 type IdInt = u16;
@@ -343,15 +344,43 @@ fn create_table(db: &rusqlite::Connection) -> Result<(), ()> {
     }
 }
 
-fn get_db(filename: &str) -> rusqlite::Connection {
-    let db = rusqlite::Connection::open(filename).expect("Connection to the db failed");
+fn get_db(filename: &str, in_mem: bool) -> rusqlite::Connection {
+    let mut real_path = filename.to_owned();
+    if in_mem {
+        real_path = "/dev/shm/tmp.sqlite".to_owned();
+        if std::path::Path::new(&real_path).exists() {
+            std::fs::remove_file(&real_path)
+                .expect("Failed to delete existing db file on the shm device...");
+        }
+        if std::path::Path::new(filename).exists() {
+            if std::fs::copy(filename, &real_path).is_err() {
+                real_path = filename.to_owned();
+            }
+        }
+    }
+
+    let db = rusqlite::Connection::open(&real_path).expect("Connection to the db failed");
+    std::fs::set_permissions(&real_path, std::fs::Permissions::from_mode(0o600)).unwrap();
     let _ = create_table(&db);
     return db;
 }
 
+fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
+    let db_path = db
+        .path()
+        .expect("Seems we had no database to work with....")
+        .to_str()
+        .expect("Failed to convert path to str");
+    if db_path != filename {
+        std::fs::copy(&db_path, filename)
+            .expect("Failed to copy the db file to the final location");
+        std::fs::remove_file(db_path).expect("Failed to delete temporary file on the shm device");
+    }
+}
+
 #[pyfunction]
 fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult<()> {
-    let db = get_db(filename);
+    let db = get_db(filename, true);
     let _ = create_table(&db);
     let mut insert_cmd: String = String::new();
     insert_cmd.push_str("INSERT INTO structures (mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)");
@@ -398,12 +427,15 @@ fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult
             ])
             .expect("Failed to insert data to db");
     }
+
+    db_cleanup(filename, &db);
+
     return Ok(());
 }
 
 #[pyfunction]
 fn read_db_all(filename: &str) -> PyResult<Vec<Mol2>> {
-    let db = get_db(filename);
+    let db = get_db(filename, false);
     let mut stmt = db.prepare("SELECT mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression FROM structures").expect("Failed to fetch from the database");
     let structure_iter = stmt
         .query_map([], |row| {
@@ -494,7 +526,7 @@ fn read_db_all_serialized(filename: &str) -> PyResult<Vec<PyObject>> {
 #[pyfunction]
 fn read_file(filename: &str) -> PyResult<Vec<Mol2>> {
     let file = File::open(filename).expect("Failed to open the input file");
-    let reader = BufReader::new(file);
+    let reader = BufReader::with_capacity(100 * 1024 * 1024, file);
     let mut section_name: String = String::new();
     let mut section_index: usize = 0;
     let mut mol2: Vec<Mol2> = Vec::new();
