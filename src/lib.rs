@@ -20,7 +20,6 @@ use pyo3::types::*;
 use pyo3::wrap_pyfunction;
 use regex::Regex;
 use rusqlite;
-use scan_fmt::scan_fmt_some;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
@@ -75,17 +74,8 @@ impl Molecule {
         };
     }
     fn read_nums(&mut self, line: &str) {
-        lazy_static! {
-            static ref NUMBER: Regex = Regex::new(r"(\d+)").expect("Failed to create a regex");
-        }
-
-        for (index, capture) in NUMBER.captures_iter(line).enumerate() {
-            let number = capture
-                .get(1)
-                .expect("Something went really wrong in the second line of the MOLECULE section")
-                .as_str()
-                .parse::<usize>()
-                .ok();
+        for (index, word) in line.split_whitespace().enumerate() {
+            let number = word.parse::<usize>().ok();
             match index {
                 0 => self.num_atoms = number,
                 1 => self.num_bonds = number,
@@ -286,24 +276,35 @@ fn read_bond_section(line: &str, mol2: &mut Mol2) {
     if line.len() == 0 {
         return;
     }
-    let (bond_id, origin_atom_id, target_atom_id, bond_type, status_bit) = scan_fmt_some!(
-        line,
-        r" {d} {d} {d} {} {}",
-        IdInt,
-        IdInt,
-        IdInt,
-        String,
-        String
-    );
-    let bond = Bond {
-        bond_id: bond_id.expect("Failed to get bond id from the bond section line"),
-        origin_atom_id: origin_atom_id
-            .expect("Failed to get origin atom id from the bond section line"),
-        target_atom_id: target_atom_id
-            .expect("Failed to get target atom id from the bond section line"),
-        bond_type: bond_type.expect("Failed to get bond type from the bond section line"),
-        status_bit,
+    let mut bond = Bond {
+        bond_id: 0,
+        origin_atom_id: 0,
+        target_atom_id: 0,
+        bond_type: String::new(),
+        status_bit: None,
     };
+    for (index, word) in line.split_whitespace().enumerate() {
+        match index {
+            0 => {
+                bond.bond_id = word
+                    .parse::<IdInt>()
+                    .expect("Failed to get bond id from the bond section line")
+            }
+            1 => {
+                bond.origin_atom_id = word
+                    .parse::<IdInt>()
+                    .expect("Failed to get origin atom id from the bond section line")
+            }
+            2 => {
+                bond.target_atom_id = word
+                    .parse::<IdInt>()
+                    .expect("Failed to get target atom id from the bond section line")
+            }
+            3 => bond.bond_type.push_str(word),
+            4 => bond.status_bit = Some(word.to_owned()),
+            _ => continue,
+        };
+    }
     mol2.bond.push(bond);
 }
 
@@ -311,44 +312,46 @@ fn read_substructure_section(line: &str, mol2: &mut Mol2) {
     if line.len() == 0 {
         return;
     }
-    let (
-        subst_id,
-        subst_name,
-        root_atom,
-        subst_type,
-        dict_type,
-        chain,
-        sub_type,
-        inter_bonds,
-        status,
-        comment,
-    ) = scan_fmt_some!(
-        line,
-        r" {d} {} {d} {} {d} {} {} {d} {} {/.*/}",
-        IdInt,
-        String,
-        IdInt,
-        String,
-        i64,
-        String,
-        String,
-        IdInt,
-        String,
-        String
-    );
-    let substructure = Substructure {
-        subst_id: subst_id.expect("Failed to get subst_id from a substructure section line"),
-        subst_name: subst_name.expect("Failed to get subst_name from a substructure section line"),
-        root_atom: root_atom.expect("Failed to get root atom from a substructure section line"),
-        subst_type,
-        dict_type,
-        chain,
-        sub_type,
-        inter_bonds,
-        status,
-        comment,
+    let mut comment = String::new();
+    let mut subs = Substructure {
+        subst_id: 0,
+        subst_name: String::new(),
+        root_atom: 0,
+        subst_type: None,
+        dict_type: None,
+        chain: None,
+        sub_type: None,
+        inter_bonds: None,
+        status: None,
+        comment: None,
     };
-    mol2.substructure.push(substructure);
+    for (index, word) in line.split_whitespace().enumerate() {
+        match index {
+            0 => {
+                subs.subst_id = word
+                    .parse::<IdInt>()
+                    .expect("Failed to get subst_id from a substructure section line")
+            }
+            1 => subs.subst_name = word.to_owned(),
+            2 => {
+                subs.root_atom = word
+                    .parse::<IdInt>()
+                    .expect("Failed to get root atom from a substructure section line")
+            }
+            3 => subs.subst_type = Some(word.to_owned()),
+            4 => subs.dict_type = word.parse::<i64>().ok(),
+            5 => subs.chain = Some(word.to_owned()),
+            6 => subs.sub_type = Some(word.to_owned()),
+            7 => subs.inter_bonds = word.parse::<IdInt>().ok(),
+            8 => subs.status = Some(word.to_owned()),
+            9 => comment.push_str(word),
+            _ => continue,
+        };
+    }
+    if comment.len() > 0 {
+        subs.comment = Some(comment);
+    }
+    mol2.substructure.push(subs);
 }
 
 fn create_table(db: &rusqlite::Connection) -> Result<(), ()> {
