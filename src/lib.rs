@@ -239,32 +239,46 @@ fn read_atom_section(line: &str, mol2: &mut Mol2) {
     if line.len() == 0 {
         return;
     }
-    let (atom_id, atom_name, x, y, z, atom_type, subst_id, subst_name, charge, status_bit) = scan_fmt_some!(
-        line,
-        r" {d} {} {f} {f} {f} {} {d} {} {f} {}",
-        IdInt,
-        String,
-        CoordFloat,
-        CoordFloat,
-        CoordFloat,
-        String,
-        IdInt,
-        String,
-        ChargeFloat,
-        String
-    );
-    let atom = Atom {
-        atom_id: atom_id.expect("Failed to get atom id from the atom section line"),
-        atom_name: atom_name.expect("Failed to get atom name from the atom section line"),
-        x: x.expect("Failed to get atom x from the atom section line"),
-        y: y.expect("Failed to get atom y from the atom section line"),
-        z: z.expect("Failed to get atom z from the atom section line"),
-        atom_type: atom_type.expect("Failed to get atom type from the atom section line"),
-        subst_id,
-        subst_name,
-        charge,
-        status_bit,
+
+    let mut atom = Atom {
+        atom_id: 0,
+        atom_name: String::new(),
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        atom_type: String::new(),
+        subst_id: None,
+        subst_name: None,
+        charge: None,
+        status_bit: None,
     };
+
+    for (index, word) in line.split_whitespace().enumerate() {
+        match index {
+            0 => atom.atom_id = word.parse::<IdInt>().expect("Failed to parse atom id"),
+            1 => atom.atom_name.push_str(word),
+            2 => atom.x = word.parse::<CoordFloat>().expect("Failed to parse atom x"),
+            3 => atom.y = word.parse::<CoordFloat>().expect("Failed to parse atom y"),
+            4 => atom.z = word.parse::<CoordFloat>().expect("Failed to parse atom z"),
+            5 => atom.atom_type.push_str(word),
+            6 => {
+                atom.subst_id = Some(
+                    word.parse::<IdInt>()
+                        .expect("Failed to parse atom subst_id"),
+                )
+            }
+            7 => atom.subst_name = Some(word.to_owned()),
+            8 => {
+                atom.charge = Some(
+                    word.parse::<ChargeFloat>()
+                        .expect("Failed to parse atom charge"),
+                )
+            }
+            9 => atom.status_bit = Some(word.to_owned()),
+            _ => continue,
+        };
+    }
+
     mol2.atom.push(atom);
 }
 
