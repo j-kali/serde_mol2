@@ -13,16 +13,43 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use bincode;
 use lazy_static::lazy_static;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::wrap_pyfunction;
 use regex::Regex;
+use rusqlite;
 use scan_fmt::scan_fmt_some;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::any::TypeId;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use zstd;
+
+type IdInt = u16;
+type ChargeFloat = f32;
+type CoordFloat = f64;
+
+fn my_append_value<T: 'static>(line: &mut String, value: &Option<T>)
+where
+    T: std::fmt::Display,
+{
+    if line.len() > 0 {
+        line.push_str(", ");
+    }
+    match value {
+        Some(c) => {
+            if TypeId::of::<T>() == TypeId::of::<String>() {
+                line.push_str(&format!("'{}'", c)[..]);
+            } else {
+                line.push_str(&format!("{}", c)[..]);
+            }
+        }
+        _ => line.push_str("NULL"),
+    };
+}
 
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +91,20 @@ impl Molecule {
             mol_comment: None,
         };
     }
+    fn values(&self) -> String {
+        let mut values: String = String::new();
+        my_append_value(&mut values, &Some(self.mol_name.clone()));
+        my_append_value(&mut values, &self.num_atoms);
+        my_append_value(&mut values, &self.num_bonds);
+        my_append_value(&mut values, &self.num_subst);
+        my_append_value(&mut values, &self.num_feat);
+        my_append_value(&mut values, &self.num_sets);
+        my_append_value(&mut values, &self.mol_type);
+        my_append_value(&mut values, &self.charge_type);
+        my_append_value(&mut values, &self.status_bits);
+        my_append_value(&mut values, &self.mol_comment);
+        return values;
+    }
     fn read_nums(&mut self, line: &str) {
         lazy_static! {
             static ref NUMBER: Regex = Regex::new(r"(\d+)").expect("Failed to create a regex");
@@ -92,23 +133,23 @@ impl Molecule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Atom {
     #[pyo3(get, set)]
-    atom_id: usize,
+    atom_id: IdInt,
     #[pyo3(get, set)]
     atom_name: String,
     #[pyo3(get, set)]
-    x: f64,
+    x: CoordFloat,
     #[pyo3(get, set)]
-    y: f64,
+    y: CoordFloat,
     #[pyo3(get, set)]
-    z: f64,
+    z: CoordFloat,
     #[pyo3(get, set)]
     atom_type: String,
     #[pyo3(get, set)]
-    subst_id: Option<usize>,
+    subst_id: Option<IdInt>,
     #[pyo3(get, set)]
     subst_name: Option<String>,
     #[pyo3(get, set)]
-    charge: Option<f64>,
+    charge: Option<ChargeFloat>,
     #[pyo3(get, set)]
     status_bit: Option<String>,
 }
@@ -117,11 +158,11 @@ struct Atom {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Bond {
     #[pyo3(get, set)]
-    bond_id: usize,
+    bond_id: IdInt,
     #[pyo3(get, set)]
-    origin_atom_id: usize,
+    origin_atom_id: IdInt,
     #[pyo3(get, set)]
-    target_atom_id: usize,
+    target_atom_id: IdInt,
     #[pyo3(get, set)]
     bond_type: String,
     #[pyo3(get, set)]
@@ -132,11 +173,11 @@ struct Bond {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Substructure {
     #[pyo3(get, set)]
-    subst_id: usize,
+    subst_id: IdInt,
     #[pyo3(get, set)]
     subst_name: String,
     #[pyo3(get, set)]
-    root_atom: usize,
+    root_atom: IdInt,
     #[pyo3(get, set)]
     subst_type: Option<String>,
     #[pyo3(get, set)]
@@ -146,7 +187,7 @@ struct Substructure {
     #[pyo3(get, set)]
     sub_type: Option<String>,
     #[pyo3(get, set)]
-    inter_bonds: Option<usize>,
+    inter_bonds: Option<IdInt>,
     #[pyo3(get, set)]
     status: Option<String>,
     #[pyo3(get, set)]
@@ -232,15 +273,15 @@ fn read_atom_section(line: &str, mol2: &mut Mol2) {
     let (atom_id, atom_name, x, y, z, atom_type, subst_id, subst_name, charge, status_bit) = scan_fmt_some!(
         line,
         r" {d} {} {f} {f} {f} {} {d} {} {f} {}",
-        usize,
+        IdInt,
         String,
-        f64,
-        f64,
-        f64,
+        CoordFloat,
+        CoordFloat,
+        CoordFloat,
         String,
-        usize,
+        IdInt,
         String,
-        f64,
+        ChargeFloat,
         String
     );
     let atom = Atom {
@@ -265,9 +306,9 @@ fn read_bond_section(line: &str, mol2: &mut Mol2) {
     let (bond_id, origin_atom_id, target_atom_id, bond_type, status_bit) = scan_fmt_some!(
         line,
         r" {d} {d} {d} {} {}",
-        usize,
-        usize,
-        usize,
+        IdInt,
+        IdInt,
+        IdInt,
         String,
         String
     );
@@ -301,14 +342,14 @@ fn read_substructure_section(line: &str, mol2: &mut Mol2) {
     ) = scan_fmt_some!(
         line,
         r" {d} {} {d} {} {d} {} {} {d} {} {/.*/}",
-        usize,
+        IdInt,
         String,
-        usize,
+        IdInt,
         String,
         i64,
         String,
         String,
-        usize,
+        IdInt,
         String,
         String
     );
@@ -325,6 +366,137 @@ fn read_substructure_section(line: &str, mol2: &mut Mol2) {
         comment,
     };
     mol2.substructure.push(substructure);
+}
+
+fn create_table(db: &rusqlite::Connection) -> Result<(), ()> {
+    match db.execute("CREATE TABLE structures (id INTEGER PRIMARY KEY, mol_name TEXT, num_atoms INTEGER, num_bonds INTEGER, num_subst INTEGER, num_feat INTEGER, num_sets INTEGER, mol_type TEXT, charge_type TEXT, status_bits TEXT, mol_comment TEXT, atom BLOB, bond BLOB, substructure BLOB, compression INTEGER)", []) {
+        Ok(_) => Ok(()),
+        _ => Err(()),
+    }
+}
+
+fn get_db(filename: &str) -> rusqlite::Connection {
+    let db = rusqlite::Connection::open(filename).expect("Connection to the db failed");
+    let _ = create_table(&db);
+    return db;
+}
+
+fn db_entry_insert(
+    mol2_entry: &Mol2,
+    db: &rusqlite::Connection,
+    compression: i32,
+) -> Result<(), ()> {
+    let mut insert_cmd: String = String::new();
+    insert_cmd.push_str("INSERT INTO structures (mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression)");
+    insert_cmd.push_str(
+        &format!(
+            " VALUES ({}",
+            mol2_entry.molecule.as_ref().unwrap().values()
+        )[..],
+    );
+    insert_cmd.push_str(", ?1, ?2, ?3");
+    // Handle compression levels
+    let mut compression_level = compression;
+    if compression_level > 9 {
+        compression_level = 9;
+    }
+    insert_cmd.push_str(&format!(", {})", compression_level)[..]);
+    let mut atom = bincode::serialize(&mol2_entry.atom).expect("Failed to serialize into binary");
+    let mut bond = bincode::serialize(&mol2_entry.bond).expect("Failed to serialize into binary");
+    let mut subs =
+        bincode::serialize(&mol2_entry.substructure).expect("Failed to serialize into binary");
+    if compression_level > 0 {
+        atom = zstd::block::Compressor::new()
+            .compress(&atom, compression_level)
+            .expect("Compression failed");
+        bond = zstd::block::Compressor::new()
+            .compress(&bond, compression_level)
+            .expect("Compression failed");
+        subs = zstd::block::Compressor::new()
+            .compress(&subs, compression_level)
+            .expect("Compression failed");
+    }
+    db.execute(&insert_cmd, rusqlite::params![atom, bond, subs])
+        .expect("Failed to insert data to db");
+    return Ok(());
+}
+
+#[pyfunction]
+fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult<()> {
+    let db = get_db(filename);
+    let _ = create_table(&db);
+    for entry in mol2_list.iter() {
+        let _ = db_entry_insert(entry, &db, compression);
+    }
+    return Ok(());
+}
+
+#[pyfunction]
+fn read_db_all(filename: &str) -> PyResult<Vec<Mol2>> {
+    let db = get_db(filename);
+    let mut stmt = db.prepare("SELECT mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression FROM structures").expect("Failed to fetch from the database");
+    let structure_iter = stmt
+        .query_map([], |row| {
+            let compression: i32 = row.get(13).unwrap();
+            let mut atom: Vec<u8> = row.get(10).unwrap();
+            let mut bond: Vec<u8> = row.get(11).unwrap();
+            let mut subs: Vec<u8> = row.get(12).unwrap();
+            if compression > 0 {
+                atom = zstd::block::Decompressor::new()
+                    .decompress(&atom, usize::MAX)
+                    .expect("Failed to decompress");
+                bond = zstd::block::Decompressor::new()
+                    .decompress(&bond, usize::MAX)
+                    .expect("Failed to decompress");
+                subs = zstd::block::Decompressor::new()
+                    .decompress(&subs, usize::MAX)
+                    .expect("Failed to decompress");
+            }
+            let atom: Vec<Atom> =
+                bincode::deserialize(&atom).expect("Failed to deserialize &[u8] to Atom");
+            let bond: Vec<Bond> =
+                bincode::deserialize(&bond).expect("Failed to deserialize &[u8] to Bond");
+            let substructure: Vec<Substructure> =
+                bincode::deserialize(&subs).expect("Failed to deserialize &[u8] to Substructure");
+            Ok(Mol2 {
+                molecule: Some(Molecule {
+                    mol_name: row.get(0).unwrap(),
+                    num_atoms: row.get(1).unwrap(),
+                    num_bonds: row.get(2).unwrap(),
+                    num_subst: row.get(3).unwrap(),
+                    num_feat: row.get(4).unwrap(),
+                    num_sets: row.get(5).unwrap(),
+                    mol_type: row.get(6).unwrap(),
+                    charge_type: row.get(7).unwrap(),
+                    status_bits: row.get(8).unwrap(),
+                    mol_comment: row.get(9).unwrap(),
+                }),
+                atom,
+                bond,
+                substructure,
+            })
+        })
+        .expect("Failed to fetch exact numbers from db");
+    let mut mol2_list: Vec<Mol2> = Vec::new();
+    for structure in structure_iter {
+        mol2_list.push(structure.expect("Failed to get structure after successful extraction...?"));
+    }
+
+    Ok(mol2_list)
+}
+
+#[pyfunction]
+fn read_db_all_serialized(filename: &str) -> PyResult<Vec<PyObject>> {
+    let mol2_list = read_db_all(filename).expect("Failed to read mol2 db");
+    let mut result: Vec<PyObject> = Vec::new();
+    for entry in &mol2_list {
+        result.push(
+            entry
+                .serialized()
+                .expect("Failed to serialize mol2 entry..."),
+        );
+    }
+    return Ok(result);
 }
 
 #[pyfunction]
@@ -395,6 +567,9 @@ fn serde_mol2(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<Mol2>()?;
     m.add_wrapped(wrap_pyfunction!(read_file))?;
     m.add_wrapped(wrap_pyfunction!(read_file_serialized))?;
+    m.add_wrapped(wrap_pyfunction!(db_insert))?;
+    m.add_wrapped(wrap_pyfunction!(read_db_all))?;
+    m.add_wrapped(wrap_pyfunction!(read_db_all_serialized))?;
 
     Ok(())
 }
