@@ -23,7 +23,6 @@ use rusqlite;
 use scan_fmt::scan_fmt_some;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::any::TypeId;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use zstd;
@@ -32,24 +31,7 @@ type IdInt = u16;
 type ChargeFloat = f32;
 type CoordFloat = f64;
 
-fn my_append_value<T: 'static>(line: &mut String, value: &Option<T>)
-where
-    T: std::fmt::Display,
-{
-    if line.len() > 0 {
-        line.push_str(", ");
-    }
-    match value {
-        Some(c) => {
-            if TypeId::of::<T>() == TypeId::of::<String>() {
-                line.push_str(&format!("'{}'", c)[..]);
-            } else {
-                line.push_str(&format!("{}", c)[..]);
-            }
-        }
-        _ => line.push_str("NULL"),
-    };
-}
+static DECOMPRESSOR_BUFFER: usize = 100 * 1024 * 1024;
 
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,20 +72,6 @@ impl Molecule {
             status_bits: None,
             mol_comment: None,
         };
-    }
-    fn values(&self) -> String {
-        let mut values: String = String::new();
-        my_append_value(&mut values, &Some(self.mol_name.clone()));
-        my_append_value(&mut values, &self.num_atoms);
-        my_append_value(&mut values, &self.num_bonds);
-        my_append_value(&mut values, &self.num_subst);
-        my_append_value(&mut values, &self.num_feat);
-        my_append_value(&mut values, &self.num_sets);
-        my_append_value(&mut values, &self.mol_type);
-        my_append_value(&mut values, &self.charge_type);
-        my_append_value(&mut values, &self.status_bits);
-        my_append_value(&mut values, &self.mol_comment);
-        return values;
     }
     fn read_nums(&mut self, line: &str) {
         lazy_static! {
@@ -381,52 +349,54 @@ fn get_db(filename: &str) -> rusqlite::Connection {
     return db;
 }
 
-fn db_entry_insert(
-    mol2_entry: &Mol2,
-    db: &rusqlite::Connection,
-    compression: i32,
-) -> Result<(), ()> {
+#[pyfunction]
+fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult<()> {
+    let db = get_db(filename);
+    let _ = create_table(&db);
     let mut insert_cmd: String = String::new();
-    insert_cmd.push_str("INSERT INTO structures (mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression)");
-    insert_cmd.push_str(
-        &format!(
-            " VALUES ({}",
-            mol2_entry.molecule.as_ref().unwrap().values()
-        )[..],
-    );
-    insert_cmd.push_str(", ?1, ?2, ?3");
+    insert_cmd.push_str("INSERT INTO structures (mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)");
     // Handle compression levels
     let mut compression_level = compression;
     if compression_level > 9 {
         compression_level = 9;
     }
-    insert_cmd.push_str(&format!(", {})", compression_level)[..]);
-    let mut atom = bincode::serialize(&mol2_entry.atom).expect("Failed to serialize into binary");
-    let mut bond = bincode::serialize(&mol2_entry.bond).expect("Failed to serialize into binary");
-    let mut subs =
-        bincode::serialize(&mol2_entry.substructure).expect("Failed to serialize into binary");
-    if compression_level > 0 {
-        atom = zstd::block::Compressor::new()
-            .compress(&atom, compression_level)
-            .expect("Compression failed");
-        bond = zstd::block::Compressor::new()
-            .compress(&bond, compression_level)
-            .expect("Compression failed");
-        subs = zstd::block::Compressor::new()
-            .compress(&subs, compression_level)
-            .expect("Compression failed");
-    }
-    db.execute(&insert_cmd, rusqlite::params![atom, bond, subs])
-        .expect("Failed to insert data to db");
-    return Ok(());
-}
-
-#[pyfunction]
-fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult<()> {
-    let db = get_db(filename);
-    let _ = create_table(&db);
+    let mut statement = db
+        .prepare(&insert_cmd)
+        .expect("Failed to prepare an sql statement");
     for entry in mol2_list.iter() {
-        let _ = db_entry_insert(entry, &db, compression);
+        let mut atom = bincode::serialize(&entry.atom).expect("Failed to serialize into binary");
+        let mut bond = bincode::serialize(&entry.bond).expect("Failed to serialize into binary");
+        let mut subs =
+            bincode::serialize(&entry.substructure).expect("Failed to serialize into binary");
+        if compression_level > 0 {
+            atom = zstd::block::Compressor::new()
+                .compress(&atom, compression_level)
+                .expect("Compression failed");
+            bond = zstd::block::Compressor::new()
+                .compress(&bond, compression_level)
+                .expect("Compression failed");
+            subs = zstd::block::Compressor::new()
+                .compress(&subs, compression_level)
+                .expect("Compression failed");
+        }
+        statement
+            .execute(rusqlite::params![
+                entry.molecule.as_ref().unwrap().mol_name,
+                entry.molecule.as_ref().unwrap().num_atoms,
+                entry.molecule.as_ref().unwrap().num_bonds,
+                entry.molecule.as_ref().unwrap().num_subst,
+                entry.molecule.as_ref().unwrap().num_feat,
+                entry.molecule.as_ref().unwrap().num_sets,
+                entry.molecule.as_ref().unwrap().mol_type,
+                entry.molecule.as_ref().unwrap().charge_type,
+                entry.molecule.as_ref().unwrap().status_bits,
+                entry.molecule.as_ref().unwrap().mol_comment,
+                atom,
+                bond,
+                subs,
+                compression_level,
+            ])
+            .expect("Failed to insert data to db");
     }
     return Ok(());
 }
@@ -443,13 +413,13 @@ fn read_db_all(filename: &str) -> PyResult<Vec<Mol2>> {
             let mut subs: Vec<u8> = row.get(12).unwrap();
             if compression > 0 {
                 atom = zstd::block::Decompressor::new()
-                    .decompress(&atom, usize::MAX)
+                    .decompress(&atom, DECOMPRESSOR_BUFFER)
                     .expect("Failed to decompress");
                 bond = zstd::block::Decompressor::new()
-                    .decompress(&bond, usize::MAX)
+                    .decompress(&bond, DECOMPRESSOR_BUFFER)
                     .expect("Failed to decompress");
                 subs = zstd::block::Decompressor::new()
-                    .decompress(&subs, usize::MAX)
+                    .decompress(&subs, DECOMPRESSOR_BUFFER)
                     .expect("Failed to decompress");
             }
             let atom: Vec<Atom> =
@@ -483,6 +453,28 @@ fn read_db_all(filename: &str) -> PyResult<Vec<Mol2>> {
     }
 
     Ok(mol2_list)
+}
+
+#[pyfunction]
+fn read_file_to_db(filename: &str, db_name: &str, compression: i32) -> PyResult<()> {
+    let content = match read_file(filename) {
+        Ok(c) => c,
+        _ => Vec::new(),
+    };
+    let _ = db_insert(content, db_name, compression);
+    Ok(())
+}
+
+#[pyfunction]
+fn read_file_to_db_batch(filenames: Vec<&str>, db_name: &str, compression: i32) -> PyResult<()> {
+    for filename in &filenames {
+        let content = match read_file(filename) {
+            Ok(c) => c,
+            _ => Vec::new(),
+        };
+        let _ = db_insert(content, db_name, compression);
+    }
+    Ok(())
 }
 
 #[pyfunction]
@@ -570,6 +562,8 @@ fn serde_mol2(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(db_insert))?;
     m.add_wrapped(wrap_pyfunction!(read_db_all))?;
     m.add_wrapped(wrap_pyfunction!(read_db_all_serialized))?;
+    m.add_wrapped(wrap_pyfunction!(read_file_to_db))?;
+    m.add_wrapped(wrap_pyfunction!(read_file_to_db_batch))?;
 
     Ok(())
 }
