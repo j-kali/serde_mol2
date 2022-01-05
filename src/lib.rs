@@ -21,6 +21,8 @@ use rusqlite;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use zstd;
@@ -30,6 +32,17 @@ type ChargeFloat = f32;
 type CoordFloat = f64;
 
 static DECOMPRESSOR_BUFFER: usize = 100 * 1024 * 1024;
+
+fn write_string(text: &String, filename: &str) {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(filename)
+        .expect("Failed to open tmp file");
+    file.write_all(text.as_bytes())
+        .expect("Failed to write to a mol2 file");
+}
 
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +97,50 @@ impl Molecule {
             }
         }
     }
+    fn to_string(&self) -> String {
+        let mut text = "@<TRIPOS>MOLECULE\n".to_owned();
+
+        for nline in 0..6 {
+            match nline {
+                0 => text.push_str(&self.mol_name),
+                1 => {
+                    for nnum in 0..5 {
+                        let number = match nnum {
+                            0 => self.num_atoms,
+                            1 => self.num_bonds,
+                            2 => self.num_subst,
+                            3 => self.num_feat,
+                            4 => self.num_sets,
+                            _ => continue,
+                        };
+                        if number.is_none() {
+                            break;
+                        } else {
+                            if nnum > 0 {
+                                text.push_str(" ");
+                            }
+                            text.push_str(&format!("{}", number.unwrap())[..]);
+                        }
+                    }
+                }
+                2 => text.push_str(&self.mol_type.as_ref().unwrap_or(&"".to_owned())),
+                3 => text.push_str(&self.charge_type.as_ref().unwrap_or(&"".to_owned())),
+                4 => {
+                    if self.status_bits.is_none() && self.mol_comment.is_some() {
+                        text.push_str("****");
+                    } else {
+                        text.push_str(&self.status_bits.as_ref().unwrap_or(&"".to_owned()));
+                    }
+                }
+                5 => text.push_str(&self.mol_comment.as_ref().unwrap_or(&"".to_owned())),
+                _ => continue,
+            }
+            // Add a newline at the end of every line
+            text.push_str("\n");
+        }
+
+        return text;
+    }
 }
 
 #[pyclass]
@@ -111,6 +168,42 @@ struct Atom {
     status_bit: Option<String>,
 }
 
+impl Atom {
+    fn to_string(&self) -> String {
+        let mut text = String::new();
+
+        text.push_str(
+            &format!(
+                "{} {} {} {} {} {}",
+                self.atom_id, self.atom_name, self.x, self.y, self.z, self.atom_type
+            )[..],
+        );
+
+        for n in 0..4 {
+            if match n {
+                0 => self.subst_id.is_none(),
+                1 => self.subst_name.is_none(),
+                2 => self.charge.is_none(),
+                3 => self.status_bit.is_none(),
+                _ => continue,
+            } {
+                break;
+            }
+            text.push_str(" ");
+            match n {
+                0 => text.push_str(&format!("{}", self.subst_id.as_ref().unwrap())[..]),
+                1 => text.push_str(&self.subst_name.as_ref().unwrap()),
+                2 => text.push_str(&format!("{}", self.charge.as_ref().unwrap())[..]),
+                3 => text.push_str(&self.status_bit.as_ref().unwrap()),
+                _ => continue,
+            }
+        }
+        text.push_str("\n");
+
+        return text;
+    }
+}
+
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Bond {
@@ -124,6 +217,26 @@ struct Bond {
     bond_type: String,
     #[pyo3(get, set)]
     status_bit: Option<String>,
+}
+
+impl Bond {
+    fn to_string(&self) -> String {
+        let mut text = String::new();
+
+        text.push_str(
+            &format!(
+                "{} {} {} {}",
+                self.bond_id, self.origin_atom_id, self.target_atom_id, self.bond_type
+            )[..],
+        );
+
+        if self.status_bit.is_some() {
+            text.push_str(&format!(" {}", self.status_bit.as_ref().unwrap())[..]);
+        }
+        text.push_str("\n");
+
+        return text;
+    }
 }
 
 #[pyclass]
@@ -149,6 +262,43 @@ struct Substructure {
     status: Option<String>,
     #[pyo3(get, set)]
     comment: Option<String>,
+}
+
+impl Substructure {
+    fn to_string(&self) -> String {
+        let mut text = String::new();
+
+        text.push_str(&format!("{} {} {}", self.subst_id, self.subst_name, self.root_atom)[..]);
+
+        for n in 0..7 {
+            if match n {
+                0 => self.subst_type.is_none(),
+                1 => self.dict_type.is_none(),
+                2 => self.chain.is_none(),
+                3 => self.sub_type.is_none(),
+                4 => self.inter_bonds.is_none(),
+                5 => self.status.is_none(),
+                6 => self.comment.is_none(),
+                _ => continue,
+            } {
+                break;
+            }
+            text.push_str(" ");
+            match n {
+                0 => text.push_str(&self.subst_type.as_ref().unwrap()),
+                1 => text.push_str(&format!("{}", self.dict_type.as_ref().unwrap())[..]),
+                2 => text.push_str(&self.chain.as_ref().unwrap()),
+                3 => text.push_str(&self.sub_type.as_ref().unwrap()),
+                4 => text.push_str(&format!("{}", self.inter_bonds.as_ref().unwrap())[..]),
+                5 => text.push_str(&self.status.as_ref().unwrap()),
+                6 => text.push_str(&self.comment.as_ref().unwrap()),
+                _ => continue,
+            }
+        }
+        text.push_str("\n");
+
+        return text;
+    }
 }
 
 #[pyclass]
@@ -181,6 +331,42 @@ impl Mol2 {
         let json_str: String =
             serde_json::to_string(self).expect("Failed to translate mol2 into json format");
         return json_str;
+    }
+    fn to_string(&self) -> String {
+        let mut text = String::new();
+
+        if self.molecule.is_none() {
+            return text;
+        }
+
+        text.push_str(&self.molecule.as_ref().unwrap().to_string());
+        // We should probably have a generic function for these section thingies...
+        if !self.atom.is_empty() {
+            text.push_str("@<TRIPOS>ATOM\n");
+            for entry in &self.atom {
+                text.push_str(&entry.to_string());
+            }
+            text.push_str("\n");
+        }
+        if !self.bond.is_empty() {
+            text.push_str("@<TRIPOS>BOND\n");
+            for entry in &self.bond {
+                text.push_str(&entry.to_string());
+            }
+            text.push_str("\n");
+        }
+        if !self.substructure.is_empty() {
+            text.push_str("@<TRIPOS>SUBSTRUCTURE\n");
+            for entry in &self.substructure {
+                text.push_str(&entry.to_string());
+            }
+            text.push_str("\n");
+        }
+
+        return text;
+    }
+    fn write_mol2(&self, filename: &str) {
+        write_string(&self.to_string(), filename);
     }
     fn serialized(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
@@ -391,6 +577,16 @@ fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
             .expect("Failed to copy the db file to the final location");
         std::fs::remove_file(db_path).expect("Failed to delete temporary file on the shm device");
     }
+}
+
+#[pyfunction]
+fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
+    // at some point we might need to add some buffering in case the list is too large...
+    let mut text = String::new();
+    for entry in &mol2_list {
+        text.push_str(&entry.to_string());
+    }
+    write_string(&text, filename);
 }
 
 #[pyfunction(mol2_list, filename, compression = "3", shm = "true")]
@@ -612,6 +808,7 @@ fn serde_mol2(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(read_db_all_serialized))?;
     m.add_wrapped(wrap_pyfunction!(read_file_to_db))?;
     m.add_wrapped(wrap_pyfunction!(read_file_to_db_batch))?;
+    m.add_wrapped(wrap_pyfunction!(write_mol2))?;
 
     Ok(())
 }
