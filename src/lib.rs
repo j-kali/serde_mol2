@@ -13,19 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use bincode;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::wrap_pyfunction;
-use rusqlite;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
-use zstd;
 
 type IdInt = u16;
 type ChargeFloat = f32;
@@ -33,7 +29,7 @@ type CoordFloat = f64;
 
 static DECOMPRESSOR_BUFFER: usize = 100 * 1024 * 1024;
 
-fn write_string(text: &String, filename: &str) {
+fn write_string(text: &str, filename: &str) {
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -71,7 +67,7 @@ struct Molecule {
 
 impl Molecule {
     fn new() -> Molecule {
-        return Molecule {
+        Molecule {
             mol_name: String::new(),
             num_atoms: None,
             num_bonds: None,
@@ -82,7 +78,7 @@ impl Molecule {
             charge_type: None,
             status_bits: None,
             mol_comment: None,
-        };
+        }
     }
     fn read_nums(&mut self, line: &str) {
         for (index, word) in line.split_whitespace().enumerate() {
@@ -97,7 +93,7 @@ impl Molecule {
             }
         }
     }
-    fn to_string(&self) -> String {
+    fn as_string(&self) -> String {
         let mut text = "@<TRIPOS>MOLECULE\n".to_owned();
 
         for nline in 0..6 {
@@ -117,29 +113,29 @@ impl Molecule {
                             break;
                         } else {
                             if nnum > 0 {
-                                text.push_str(" ");
+                                text.push(' ');
                             }
                             text.push_str(&format!("{}", number.unwrap())[..]);
                         }
                     }
                 }
-                2 => text.push_str(&self.mol_type.as_ref().unwrap_or(&"".to_owned())),
-                3 => text.push_str(&self.charge_type.as_ref().unwrap_or(&"".to_owned())),
+                2 => text.push_str(self.mol_type.as_ref().unwrap_or(&"".to_owned())),
+                3 => text.push_str(self.charge_type.as_ref().unwrap_or(&"".to_owned())),
                 4 => {
                     if self.status_bits.is_none() && self.mol_comment.is_some() {
                         text.push_str("****");
                     } else {
-                        text.push_str(&self.status_bits.as_ref().unwrap_or(&"".to_owned()));
+                        text.push_str(self.status_bits.as_ref().unwrap_or(&"".to_owned()));
                     }
                 }
-                5 => text.push_str(&self.mol_comment.as_ref().unwrap_or(&"".to_owned())),
+                5 => text.push_str(self.mol_comment.as_ref().unwrap_or(&"".to_owned())),
                 _ => continue,
             }
             // Add a newline at the end of every line
-            text.push_str("\n");
+            text.push('\n');
         }
 
-        return text;
+        text
     }
 }
 
@@ -169,7 +165,7 @@ struct Atom {
 }
 
 impl Atom {
-    fn to_string(&self) -> String {
+    fn as_string(&self) -> String {
         let mut text = String::new();
 
         text.push_str(
@@ -189,18 +185,18 @@ impl Atom {
             } {
                 break;
             }
-            text.push_str(" ");
+            text.push(' ');
             match n {
                 0 => text.push_str(&format!("{}", self.subst_id.as_ref().unwrap())[..]),
-                1 => text.push_str(&self.subst_name.as_ref().unwrap()),
+                1 => text.push_str(self.subst_name.as_ref().unwrap()),
                 2 => text.push_str(&format!("{}", self.charge.as_ref().unwrap())[..]),
-                3 => text.push_str(&self.status_bit.as_ref().unwrap()),
+                3 => text.push_str(self.status_bit.as_ref().unwrap()),
                 _ => continue,
             }
         }
-        text.push_str("\n");
+        text.push('\n');
 
-        return text;
+        text
     }
 }
 
@@ -220,7 +216,7 @@ struct Bond {
 }
 
 impl Bond {
-    fn to_string(&self) -> String {
+    fn as_string(&self) -> String {
         let mut text = String::new();
 
         text.push_str(
@@ -233,9 +229,9 @@ impl Bond {
         if self.status_bit.is_some() {
             text.push_str(&format!(" {}", self.status_bit.as_ref().unwrap())[..]);
         }
-        text.push_str("\n");
+        text.push('\n');
 
-        return text;
+        text
     }
 }
 
@@ -265,7 +261,7 @@ struct Substructure {
 }
 
 impl Substructure {
-    fn to_string(&self) -> String {
+    fn as_string(&self) -> String {
         let mut text = String::new();
 
         text.push_str(&format!("{} {} {}", self.subst_id, self.subst_name, self.root_atom)[..]);
@@ -283,21 +279,21 @@ impl Substructure {
             } {
                 break;
             }
-            text.push_str(" ");
+            text.push(' ');
             match n {
-                0 => text.push_str(&self.subst_type.as_ref().unwrap()),
+                0 => text.push_str(self.subst_type.as_ref().unwrap()),
                 1 => text.push_str(&format!("{}", self.dict_type.as_ref().unwrap())[..]),
-                2 => text.push_str(&self.chain.as_ref().unwrap()),
-                3 => text.push_str(&self.sub_type.as_ref().unwrap()),
+                2 => text.push_str(self.chain.as_ref().unwrap()),
+                3 => text.push_str(self.sub_type.as_ref().unwrap()),
                 4 => text.push_str(&format!("{}", self.inter_bonds.as_ref().unwrap())[..]),
-                5 => text.push_str(&self.status.as_ref().unwrap()),
-                6 => text.push_str(&self.comment.as_ref().unwrap()),
+                5 => text.push_str(self.status.as_ref().unwrap()),
+                6 => text.push_str(self.comment.as_ref().unwrap()),
                 _ => continue,
             }
         }
-        text.push_str("\n");
+        text.push('\n');
 
-        return text;
+        text
     }
 }
 
@@ -316,12 +312,12 @@ struct Mol2 {
 
 impl Mol2 {
     fn new() -> Mol2 {
-        return Mol2 {
+        Mol2 {
             molecule: None,
             atom: Vec::new(),
             bond: Vec::new(),
             substructure: Vec::new(),
-        };
+        }
     }
 }
 
@@ -330,43 +326,43 @@ impl Mol2 {
     fn to_json(&self) -> String {
         let json_str: String =
             serde_json::to_string(self).expect("Failed to translate mol2 into json format");
-        return json_str;
+        json_str
     }
-    fn to_string(&self) -> String {
+    fn as_string(&self) -> String {
         let mut text = String::new();
 
         if self.molecule.is_none() {
             return text;
         }
 
-        text.push_str(&self.molecule.as_ref().unwrap().to_string());
+        text.push_str(&self.molecule.as_ref().unwrap().as_string());
         // We should probably have a generic function for these section thingies...
         if !self.atom.is_empty() {
             text.push_str("@<TRIPOS>ATOM\n");
             for entry in &self.atom {
-                text.push_str(&entry.to_string());
+                text.push_str(&entry.as_string());
             }
-            text.push_str("\n");
+            text.push('\n');
         }
         if !self.bond.is_empty() {
             text.push_str("@<TRIPOS>BOND\n");
             for entry in &self.bond {
-                text.push_str(&entry.to_string());
+                text.push_str(&entry.as_string());
             }
-            text.push_str("\n");
+            text.push('\n');
         }
         if !self.substructure.is_empty() {
             text.push_str("@<TRIPOS>SUBSTRUCTURE\n");
             for entry in &self.substructure {
-                text.push_str(&entry.to_string());
+                text.push_str(&entry.as_string());
             }
-            text.push_str("\n");
+            text.push('\n');
         }
 
-        return text;
+        text
     }
     fn write_mol2(&self, filename: &str) {
-        write_string(&self.to_string(), filename);
+        write_string(&self.as_string(), filename);
     }
     fn serialized(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
@@ -382,7 +378,7 @@ impl Mol2 {
 }
 
 fn read_molecule_section(nline: usize, line: &str, mol2: &mut Mol2) {
-    if line.len() == 0 {
+    if line.is_empty() {
         return;
     }
     match nline {
@@ -405,12 +401,12 @@ fn read_molecule_section(nline: usize, line: &str, mol2: &mut Mol2) {
                 Some(line.split_whitespace().next().get_or_insert("").to_owned())
         }
         5 => mol2.molecule.get_or_insert(Molecule::new()).mol_comment = Some(line.to_owned()),
-        _ => return,
+        _ => {}
     }
 }
 
 fn read_atom_section(line: &str, mol2: &mut Mol2) {
-    if line.len() == 0 {
+    if line.is_empty() {
         return;
     }
 
@@ -457,7 +453,7 @@ fn read_atom_section(line: &str, mol2: &mut Mol2) {
 }
 
 fn read_bond_section(line: &str, mol2: &mut Mol2) {
-    if line.len() == 0 {
+    if line.is_empty() {
         return;
     }
     let mut bond = Bond {
@@ -493,7 +489,7 @@ fn read_bond_section(line: &str, mol2: &mut Mol2) {
 }
 
 fn read_substructure_section(line: &str, mol2: &mut Mol2) {
-    if line.len() == 0 {
+    if line.is_empty() {
         return;
     }
     let mut comment = String::new();
@@ -532,7 +528,7 @@ fn read_substructure_section(line: &str, mol2: &mut Mol2) {
             _ => continue,
         };
     }
-    if comment.len() > 0 {
+    if !comment.is_empty() {
         subs.comment = Some(comment);
     }
     mol2.substructure.push(subs);
@@ -553,17 +549,15 @@ fn get_db(filename: &str, in_mem: bool) -> rusqlite::Connection {
             std::fs::remove_file(&real_path)
                 .expect("Failed to delete existing db file on the shm device...");
         }
-        if std::path::Path::new(filename).exists() {
-            if std::fs::copy(filename, &real_path).is_err() {
-                real_path = filename.to_owned();
-            }
+        if std::path::Path::new(filename).exists() && std::fs::copy(filename, &real_path).is_err() {
+            real_path = filename.to_owned();
         }
     }
 
     let db = rusqlite::Connection::open(&real_path).expect("Connection to the db failed");
     std::fs::set_permissions(&real_path, std::fs::Permissions::from_mode(0o600)).unwrap();
     let _ = create_table(&db);
-    return db;
+    db
 }
 
 fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
@@ -584,7 +578,7 @@ fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
     // at some point we might need to add some buffering in case the list is too large...
     let mut text = String::new();
     for entry in &mol2_list {
-        text.push_str(&entry.to_string());
+        text.push_str(&entry.as_string());
     }
     write_string(&text, filename);
 }
@@ -641,7 +635,7 @@ fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) 
 
     db_cleanup(filename, &db);
 
-    return Ok(());
+    Ok(())
 }
 
 #[pyfunction(filename, shm = "false")]
@@ -736,7 +730,7 @@ fn read_db_all_serialized(filename: &str, shm: bool) -> PyResult<Vec<PyObject>> 
                 .expect("Failed to serialize mol2 entry..."),
         );
     }
-    return Ok(result);
+    Ok(result)
 }
 
 #[pyfunction]
@@ -777,7 +771,7 @@ fn read_file(filename: &str) -> PyResult<Vec<Mol2>> {
     }
     mol2.push(entry); // if we are just at the end of the file
 
-    return Ok(mol2);
+    Ok(mol2)
 }
 
 #[pyfunction]
@@ -791,7 +785,7 @@ fn read_file_serialized(filename: &str) -> PyResult<Vec<PyObject>> {
                 .expect("Failed to serialize mol2 entry..."),
         );
     }
-    return Ok(result);
+    Ok(result)
 }
 
 #[pymodule]
