@@ -14,11 +14,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use bincode;
-use lazy_static::lazy_static;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use pyo3::wrap_pyfunction;
-use regex::Regex;
 use rusqlite;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -395,9 +393,9 @@ fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
     }
 }
 
-#[pyfunction]
-fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult<()> {
-    let db = get_db(filename, true);
+#[pyfunction(mol2_list, filename, compression = "3", shm = "true")]
+fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) -> PyResult<()> {
+    let db = get_db(filename, shm);
     let _ = create_table(&db);
     let mut insert_cmd: String = String::new();
     insert_cmd.push_str("INSERT INTO structures (mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)");
@@ -450,9 +448,9 @@ fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32) -> PyResult
     return Ok(());
 }
 
-#[pyfunction]
-fn read_db_all(filename: &str) -> PyResult<Vec<Mol2>> {
-    let db = get_db(filename, false);
+#[pyfunction(filename, shm = "false")]
+fn read_db_all(filename: &str, shm: bool) -> PyResult<Vec<Mol2>> {
+    let db = get_db(filename, shm);
     let mut stmt = db.prepare("SELECT mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression FROM structures").expect("Failed to fetch from the database");
     let structure_iter = stmt
         .query_map([], |row| {
@@ -504,31 +502,36 @@ fn read_db_all(filename: &str) -> PyResult<Vec<Mol2>> {
     Ok(mol2_list)
 }
 
-#[pyfunction]
-fn read_file_to_db(filename: &str, db_name: &str, compression: i32) -> PyResult<()> {
+#[pyfunction(filename, db_name, compression = "3", shm = "true")]
+fn read_file_to_db(filename: &str, db_name: &str, compression: i32, shm: bool) -> PyResult<()> {
     let content = match read_file(filename) {
         Ok(c) => c,
         _ => Vec::new(),
     };
-    let _ = db_insert(content, db_name, compression);
+    let _ = db_insert(content, db_name, compression, shm);
     Ok(())
 }
 
-#[pyfunction]
-fn read_file_to_db_batch(filenames: Vec<&str>, db_name: &str, compression: i32) -> PyResult<()> {
+#[pyfunction(filenames, db_name, compression = "3", shm = "true")]
+fn read_file_to_db_batch(
+    filenames: Vec<&str>,
+    db_name: &str,
+    compression: i32,
+    shm: bool,
+) -> PyResult<()> {
     for filename in &filenames {
         let content = match read_file(filename) {
             Ok(c) => c,
             _ => Vec::new(),
         };
-        let _ = db_insert(content, db_name, compression);
+        let _ = db_insert(content, db_name, compression, shm);
     }
     Ok(())
 }
 
 #[pyfunction]
-fn read_db_all_serialized(filename: &str) -> PyResult<Vec<PyObject>> {
-    let mol2_list = read_db_all(filename).expect("Failed to read mol2 db");
+fn read_db_all_serialized(filename: &str, shm: bool) -> PyResult<Vec<PyObject>> {
+    let mol2_list = read_db_all(filename, shm).expect("Failed to read mol2 db");
     let mut result: Vec<PyObject> = Vec::new();
     for entry in &mol2_list {
         result.push(
@@ -552,18 +555,14 @@ fn read_file(filename: &str) -> PyResult<Vec<Mol2>> {
         let line =
             line.expect(&format!("Failed to read {} line from the input file", index + 1)[..]);
 
-        lazy_static! {
-            static ref NEW_SECTION: Regex =
-                Regex::new(r"^@<TRIPOS>(\w+)").expect("Failed to create a regex");
+        let mut section_start = false;
+        if line.len() > 11 {
+            section_start = &line[0..9] == "@<TRIPOS>";
         }
-        if NEW_SECTION.is_match(&line) {
-            section_name = NEW_SECTION
-                .captures(&line)
-                .expect("captures failed on new section")
-                .get(1)
-                .expect("There was a match for new section but name seems to be missing...?")
-                .as_str()
-                .to_owned();
+        if section_start {
+            section_name = (&line[9..]).to_owned();
+            // make sure to not use any extra characters...
+            section_name = section_name.split_whitespace().next().unwrap().to_owned();
             section_index = index;
             if section_name == "MOLECULE" && entry.molecule.is_some() {
                 mol2.push(entry);
