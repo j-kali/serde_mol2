@@ -27,9 +27,14 @@ type IdInt = u16;
 type ChargeFloat = f32;
 type CoordFloat = f64;
 
+// Using a rather large buffer but for our applications should be fine.
 static DECOMPRESSOR_BUFFER: usize = 100 * 1024 * 1024;
 
 fn write_string(text: &str, filename: &str) {
+    // Helper function to standardize writing strings to files
+    // Input:
+    //     text: string to write
+    //     filename: path to a file to write to
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -40,6 +45,7 @@ fn write_string(text: &str, filename: &str) {
         .expect("Failed to write to a mol2 file");
 }
 
+// Struct for holding data from MOLECULE sections
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Molecule {
@@ -81,6 +87,7 @@ impl Molecule {
         }
     }
     fn read_nums(&mut self, line: &str) {
+        // Read the second line of the section
         for (index, word) in line.split_whitespace().enumerate() {
             let number = word.parse::<usize>().ok();
             match index {
@@ -94,6 +101,7 @@ impl Molecule {
         }
     }
     fn as_string(&self) -> String {
+        // Show object as a mol2 section string
         let mut text = "@<TRIPOS>MOLECULE\n".to_owned();
 
         for nline in 0..6 {
@@ -139,6 +147,7 @@ impl Molecule {
     }
 }
 
+// Struct holding data for a single atom entry in the ATOM section of the mol2 format
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Atom {
@@ -166,6 +175,7 @@ struct Atom {
 
 impl Atom {
     fn as_string(&self) -> String {
+        // Show atom entry as a string in mol2 ATOM section
         let mut text = String::new();
 
         text.push_str(
@@ -200,6 +210,7 @@ impl Atom {
     }
 }
 
+// Struct holding data for a single entry in BOND section of the mol2 file
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Bond {
@@ -217,6 +228,7 @@ struct Bond {
 
 impl Bond {
     fn as_string(&self) -> String {
+        // Show bond entry as a string in mol2 BOND section
         let mut text = String::new();
 
         text.push_str(
@@ -235,6 +247,7 @@ impl Bond {
     }
 }
 
+// Struct holding data for a single entry in SUBSTRUCTURE section of the mol2 file
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Substructure {
@@ -262,6 +275,7 @@ struct Substructure {
 
 impl Substructure {
     fn as_string(&self) -> String {
+        // Show substructure entry as a string in mol2 SUBSTRUCTURE section
         let mut text = String::new();
 
         text.push_str(&format!("{} {} {}", self.subst_id, self.subst_name, self.root_atom)[..]);
@@ -297,6 +311,7 @@ impl Substructure {
     }
 }
 
+// Struct for holding data for a single structure out of a mol2 file
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Mol2 {
@@ -324,11 +339,13 @@ impl Mol2 {
 #[pymethods]
 impl Mol2 {
     fn to_json(&self) -> String {
+        // Convert to a json string, useful in some cases. But in most cases one should probably use _serialized version of the read function
         let json_str: String =
             serde_json::to_string(self).expect("Failed to translate mol2 into json format");
         json_str
     }
     fn as_string(&self) -> String {
+        // Show whole structure in a mol2 compliant string
         let mut text = String::new();
 
         if self.molecule.is_none() {
@@ -362,9 +379,11 @@ impl Mol2 {
         text
     }
     fn write_mol2(&self, filename: &str) {
+        // Write structure as a mol2 file
         write_string(&self.as_string(), filename);
     }
     fn serialized(&self) -> PyResult<PyObject> {
+        // give a serialized version of the structure rather than binary form
         Python::with_gil(|py| {
             let json = PyModule::import(py, "json").expect("Failed to import python json module");
             let json = json
@@ -378,6 +397,11 @@ impl Mol2 {
 }
 
 fn read_molecule_section(nline: usize, line: &str, mol2: &mut Mol2) {
+    // Reading lines from a MOLECULE section
+    // Input:
+    //     nline: line number within the section
+    //     line: line string to parse
+    //     mol2: structure to update
     if line.is_empty() {
         return;
     }
@@ -406,6 +430,10 @@ fn read_molecule_section(nline: usize, line: &str, mol2: &mut Mol2) {
 }
 
 fn read_atom_section(line: &str, mol2: &mut Mol2) {
+    // Reading lines from an ATOM section
+    // Input:
+    //     line: line string to parse
+    //     mol2: structure to update
     if line.is_empty() {
         return;
     }
@@ -453,6 +481,10 @@ fn read_atom_section(line: &str, mol2: &mut Mol2) {
 }
 
 fn read_bond_section(line: &str, mol2: &mut Mol2) {
+    // Reading lines from a BOND section
+    // Input:
+    //     line: line string to parse
+    //     mol2: structure to update
     if line.is_empty() {
         return;
     }
@@ -489,6 +521,10 @@ fn read_bond_section(line: &str, mol2: &mut Mol2) {
 }
 
 fn read_substructure_section(line: &str, mol2: &mut Mol2) {
+    // Reading lines from a SUBSTRUCTURE section
+    // Input:
+    //     line: line string to parse
+    //     mol2: structure to update
     if line.is_empty() {
         return;
     }
@@ -535,6 +571,9 @@ fn read_substructure_section(line: &str, mol2: &mut Mol2) {
 }
 
 fn create_table(db: &rusqlite::Connection) -> Result<(), ()> {
+    // Create a table in the database
+    // Input:
+    //     db: connection to the database
     match db.execute("CREATE TABLE structures (id INTEGER PRIMARY KEY, mol_name TEXT, num_atoms INTEGER, num_bonds INTEGER, num_subst INTEGER, num_feat INTEGER, num_sets INTEGER, mol_type TEXT, charge_type TEXT, status_bits TEXT, mol_comment TEXT, atom BLOB, bond BLOB, substructure BLOB, compression INTEGER)", []) {
         Ok(_) => Ok(()),
         _ => Err(()),
@@ -542,6 +581,15 @@ fn create_table(db: &rusqlite::Connection) -> Result<(), ()> {
 }
 
 fn get_db(filename: &str, in_mem: bool) -> rusqlite::Connection {
+    // Get a connection to the database
+    // Input:
+    //     filename: location on the filesystem
+    //     in_mem: should we try to make a temporary copy of the database on faster filesystem before opening?
+    //
+    // in_mem by default will attempt to copy a database to /dev/shm
+    // and work there, that is why it is called 'in_mem'. In the
+    // future we probably want to allow other temporary folders to
+    // allow for example work on NVMe
     let mut real_path = filename.to_owned();
     if in_mem {
         real_path = "/dev/shm/tmp.sqlite".to_owned();
@@ -561,6 +609,14 @@ fn get_db(filename: &str, in_mem: bool) -> rusqlite::Connection {
 }
 
 fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
+    // Cleanup the connection with the database. Checks if the
+    // database is where it should or in a temporary location. If it
+    // is the temporary location let's copy it back to where it should
+    // be.
+    //
+    // Input:
+    //     filename: where the database should be
+    //     db: connection to the database
     let db_path = db
         .path()
         .expect("Seems we had no database to work with....")
@@ -575,7 +631,15 @@ fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
 
 #[pyfunction]
 fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
-    // at some point we might need to add some buffering in case the list is too large...
+    // Write a vector of mol2 structures to a single mol2 file
+    // Input:
+    //     mol2_list: vector with structures
+    //     filename: desired path for the final mol2 file
+    //
+    // TODO: At some point we might need to add some buffering in case
+    // the list is too large...
+    //
+    // TODO: At some point we probably want an 'append' option.
     let mut text = String::new();
     for entry in &mol2_list {
         text.push_str(&entry.as_string());
@@ -585,6 +649,12 @@ fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
 
 #[pyfunction(mol2_list, filename, compression = "3", shm = "true")]
 fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) -> PyResult<()> {
+    // Insert vector of structures into a database. Append if the database exists.
+    // Input:
+    //     mol2_list: vector of structures
+    //     filename: path to the database
+    //     compression: level of zstd compression. NOTE: 0 means no compression and not default level as in zstd library
+    //     shm: should be try and use a database out from a temporary location
     let db = get_db(filename, shm);
     let _ = create_table(&db);
     let mut insert_cmd: String = String::new();
@@ -640,6 +710,10 @@ fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) 
 
 #[pyfunction(filename, shm = "false")]
 fn read_db_all(filename: &str, shm: bool) -> PyResult<Vec<Mol2>> {
+    // Read all structures from a database and return as a vector
+    // Input:
+    //     filename: path to the database
+    //     shm: should we try and use the database out of a temporary location?
     let db = get_db(filename, shm);
     let mut stmt = db.prepare("SELECT mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression FROM structures").expect("Failed to fetch from the database");
     let structure_iter = stmt
@@ -692,8 +766,33 @@ fn read_db_all(filename: &str, shm: bool) -> PyResult<Vec<Mol2>> {
     Ok(mol2_list)
 }
 
+#[pyfunction]
+fn read_db_all_serialized(filename: &str, shm: bool) -> PyResult<Vec<PyObject>> {
+    // Read all structures from a database and return as a vector, but
+    // keep structures in a serialized python form rather than binary.
+    // Input:
+    //     filename: path to the database
+    //     shm: should we try and use the database out of a temporary location?
+    let mol2_list = read_db_all(filename, shm).expect("Failed to read mol2 db");
+    let mut result: Vec<PyObject> = Vec::new();
+    for entry in &mol2_list {
+        result.push(
+            entry
+                .serialized()
+                .expect("Failed to serialize mol2 entry..."),
+        );
+    }
+    Ok(result)
+}
+
 #[pyfunction(filename, db_name, compression = "3", shm = "true")]
 fn read_file_to_db(filename: &str, db_name: &str, compression: i32, shm: bool) -> PyResult<()> {
+    // Convenience function. Read structures from a mol2 file and write directly to the database
+    // Input:
+    //     filename: path to the mol2 file
+    //     db_name: path to the database
+    //     compression: compression level
+    //     shm: should we use the database out of a temporary location
     let content = match read_file(filename) {
         Ok(c) => c,
         _ => Vec::new(),
@@ -709,6 +808,12 @@ fn read_file_to_db_batch(
     compression: i32,
     shm: bool,
 ) -> PyResult<()> {
+    // Convenience function. Read structures from a set of files directly into the database
+    // Input:
+    //     filenames: vector of paths to mol2 files
+    //     db_name: path to the database
+    //     compression: compression level
+    //     shm: should we use the database out of a temporary location
     for filename in &filenames {
         let content = match read_file(filename) {
             Ok(c) => c,
@@ -720,21 +825,10 @@ fn read_file_to_db_batch(
 }
 
 #[pyfunction]
-fn read_db_all_serialized(filename: &str, shm: bool) -> PyResult<Vec<PyObject>> {
-    let mol2_list = read_db_all(filename, shm).expect("Failed to read mol2 db");
-    let mut result: Vec<PyObject> = Vec::new();
-    for entry in &mol2_list {
-        result.push(
-            entry
-                .serialized()
-                .expect("Failed to serialize mol2 entry..."),
-        );
-    }
-    Ok(result)
-}
-
-#[pyfunction]
 fn read_file(filename: &str) -> PyResult<Vec<Mol2>> {
+    // Read a mol2 file and return a vector of structures
+    // Input:
+    //     filename: path to a mol2 file
     let file = File::open(filename).expect("Failed to open the input file");
     let reader = BufReader::with_capacity(100 * 1024 * 1024, file);
     let mut section_name: String = String::new();
@@ -776,6 +870,10 @@ fn read_file(filename: &str) -> PyResult<Vec<Mol2>> {
 
 #[pyfunction]
 fn read_file_serialized(filename: &str) -> PyResult<Vec<PyObject>> {
+    // Read a mol2 file and return a vector of structures, but
+    // serialized python structures rather than a binary form.
+    // Input:
+    //     filename: path to a mol2 file
     let mol2_list = read_file(filename).expect("Failed to read mol2 file");
     let mut result: Vec<PyObject> = Vec::new();
     for entry in &mol2_list {
@@ -790,6 +888,7 @@ fn read_file_serialized(filename: &str) -> PyResult<Vec<PyObject>> {
 
 #[pymodule]
 fn serde_mol2(_py: Python, m: &PyModule) -> PyResult<()> {
+    // Define a python module.
     m.add_class::<Molecule>()?;
     m.add_class::<Atom>()?;
     m.add_class::<Bond>()?;
