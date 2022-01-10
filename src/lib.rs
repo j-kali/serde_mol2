@@ -30,7 +30,7 @@ type CoordFloat = f64;
 // Using a rather large buffer but for our applications should be fine.
 static DECOMPRESSOR_BUFFER: usize = 100 * 1024 * 1024;
 
-fn write_string(text: &str, filename: &str) {
+fn write_string(text: &str, filename: &str, append: bool) {
     // Helper function to standardize writing strings to files
     // Input:
     //     text: string to write
@@ -38,7 +38,8 @@ fn write_string(text: &str, filename: &str) {
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(!append)
+        .append(append)
         .open(filename)
         .expect("Failed to open tmp file");
     file.write_all(text.as_bytes())
@@ -406,9 +407,10 @@ impl Mol2 {
 
         text
     }
-    fn write_mol2(&self, filename: &str) {
+    #[args(filename, append = "false")]
+    fn write_mol2(&self, filename: &str, append: bool) {
         // Write structure as a mol2 file
-        write_string(&self.as_string(), filename);
+        write_string(&self.as_string(), filename, append);
     }
     fn serialized(&self) -> PyResult<PyObject> {
         // give a serialized version of the structure rather than binary form
@@ -657,8 +659,8 @@ fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
     }
 }
 
-#[pyfunction]
-pub fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
+#[pyfunction(mol2_list, filename, append = "false")]
+pub fn write_mol2(mol2_list: Vec<Mol2>, filename: &str, append: bool) {
     // Write a vector of mol2 structures to a single mol2 file
     // Input:
     //     mol2_list: vector with structures
@@ -672,7 +674,7 @@ pub fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
     for entry in &mol2_list {
         text.push_str(&entry.as_string());
     }
-    write_string(&text, filename);
+    write_string(&text, filename, append);
 }
 
 #[pyfunction(mol2_list, filename, compression = "3", shm = "true")]
