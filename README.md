@@ -3,9 +3,9 @@ Python/Rust module for mol2 format (de)serialization
 
 ## Installation
 
-For now only local use is supported.
+Install from [PyPi](https://pypi.org/project/serde-mol2/) (required python >= 3.8):
 
-    make develop
+    pip install serde-mol2
 
 Should be enough. For compilation you're going to need a working `cargo`+`rustup`. After that:
 
