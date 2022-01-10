@@ -824,13 +824,21 @@ pub fn read_file_to_db(
     Ok(())
 }
 
-#[pyfunction(filenames, db_name, compression = "3", shm = "true", desc = "\"\"")]
+#[pyfunction(
+    filenames,
+    db_name,
+    compression = "3",
+    shm = "true",
+    desc = "\"\"",
+    filename_desc = "false"
+)]
 pub fn read_file_to_db_batch(
     filenames: Vec<&str>,
     db_name: &str,
     compression: i32,
     shm: bool,
     desc: &str,
+    filename_desc: bool,
 ) -> PyResult<()> {
     // Convenience function. Read structures from a set of files directly into the database
     // Input:
@@ -839,7 +847,20 @@ pub fn read_file_to_db_batch(
     //     compression: compression level
     //     shm: should we use the database out of a temporary location
     for filename in &filenames {
-        let content = match read_file(filename, desc) {
+        let mut description: String = desc.to_owned();
+        if filename_desc {
+            if !desc.is_empty() {
+                description.push_str("; ");
+            }
+            description.push_str(
+                std::path::Path::new(filename)
+                    .file_name()
+                    .unwrap_or(std::ffi::OsStr::new(filename))
+                    .to_str()
+                    .unwrap_or(filename),
+            );
+        }
+        let content = match read_file(filename, &description) {
             Ok(c) => c,
             _ => Vec::new(),
         };
