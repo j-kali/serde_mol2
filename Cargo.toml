@@ -1,6 +1,6 @@
 [package]
 name = "serde_mol2"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Jaroslaw Kalinowski <jaroslaw.kalinowski@csc.fi>"]
 
@@ -14,7 +14,7 @@ classifier = [
   "Programming Language :: Rust",
   "Operating System :: POSIX :: Linux",
 ]
-requires-python = ">=3.6"
+requires-python = ">=3.8"
 
 [lib]
 crate-type = ["cdylib"]
