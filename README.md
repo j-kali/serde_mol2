@@ -71,7 +71,7 @@ Should be enough. For compilation you're going to need a working `cargo`+`rustup
   * _filename_: path to the database
   * _shm_: should we try and use the database out of a temporary location?
 
-- read_file_to_db( _filename_, _db-filename_, _compression=3_, _shm=True_ )
+- read_file_to_db( _filename_, _db-filename_, _compression=3_, _shm=True_ , _desc=None_ )
 
   Convenience function. Read structures from a mol2 file and write directly to the database.
 
@@ -80,8 +80,9 @@ Should be enough. For compilation you're going to need a working `cargo`+`rustup
   * _db-filename_: path to the database
   * _compression_: compression level
   * _shm_: should we use the database out of a temporary location?
+  * _desc_: add this description to structures read
 
-- read_file_to_db_batch( _filenames_, _db-filename_, _compression=3_, _shm=True_ )
+- read_file_to_db_batch( _filenames_, _db-filename_, _compression=3_, _shm=True_ _desc=None_ )
 
   Convenience function. Read structures from a set of files directly into the database.
 
@@ -90,15 +91,24 @@ Should be enough. For compilation you're going to need a working `cargo`+`rustup
   * _db-filename_: path to the database
   * _compression_: compression level
   * _shm_: should we use the database out of a temporary location?
+  * _desc_: add this description to structures read
 
-- read_file( _filename_ )
+- read_file( _filename_, _desc=None_ )
 
   Read a mol2 file and return a vector of structures
 
-- read_file_serialized( _filename_ )
+  Input:
+  * _filename_: path to the mol2 file
+  * _desc_: add this description to structures read
+
+- read_file_serialized( _filename_, _desc=None_ )
 
   Read a mol2 file and return a vector of structures, but
   serialized python structures rather than a binary form.
+
+  Input:
+  * _filename_: path to the mol2 file
+  * _desc_: add this description to structures read
 
 ### Notes
 
