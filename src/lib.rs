@@ -341,6 +341,27 @@ impl Mol2 {
             desc: description,
         }
     }
+    fn add_comment(&mut self, comment: &str) {
+        if self.molecule.is_none() || comment.is_empty() {
+            return;
+        }
+        if self.molecule.as_ref().unwrap().mol_comment.is_some() {
+            self.molecule
+                .as_mut()
+                .unwrap()
+                .mol_comment
+                .as_mut()
+                .unwrap()
+                .push_str("; ");
+        }
+        self.molecule
+            .as_mut()
+            .unwrap()
+            .mol_comment
+            .as_mut()
+            .unwrap()
+            .push_str(comment);
+    }
 }
 
 #[pymethods]
@@ -721,8 +742,8 @@ pub fn db_insert(
     Ok(())
 }
 
-#[pyfunction(filename, shm = "false", desc = "\"\"")]
-pub fn read_db_all(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<Mol2>> {
+#[pyfunction(filename, shm = "false", desc = "\"\"", comment = "\"\"")]
+pub fn read_db_all(filename: &str, shm: bool, desc: &str, comment: &str) -> PyResult<Vec<Mol2>> {
     // Read all structures from a database and return as a vector
     // Input:
     //     filename: path to the database
@@ -777,20 +798,36 @@ pub fn read_db_all(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<Mol2>>
         mol2_list.push(structure.expect("Failed to get structure after successful extraction...?"));
     }
     if !desc.is_empty() {
-        mol2_list.retain(|mol2| mol2.desc.as_ref().unwrap_or(&String::new()).contains(desc))
+        mol2_list.retain(|mol2| mol2.desc.as_ref().unwrap_or(&String::new()).contains(desc));
+    }
+    if !comment.is_empty() {
+        mol2_list.retain(|mol2| {
+            mol2.molecule
+                .as_ref()
+                .unwrap_or(&Molecule::new())
+                .mol_comment
+                .as_ref()
+                .unwrap_or(&String::new())
+                .contains(desc)
+        });
     }
 
     Ok(mol2_list)
 }
 
-#[pyfunction(filename, shm = "false", desc = "\"\"")]
-fn read_db_all_serialized(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<PyObject>> {
+#[pyfunction(filename, shm = "false", desc = "\"\"", comment = "\"\"")]
+fn read_db_all_serialized(
+    filename: &str,
+    shm: bool,
+    desc: &str,
+    comment: &str,
+) -> PyResult<Vec<PyObject>> {
     // Read all structures from a database and return as a vector, but
     // keep structures in a serialized python form rather than binary.
     // Input:
     //     filename: path to the database
     //     shm: should we try and use the database out of a temporary location?
-    let mol2_list = read_db_all(filename, shm, desc).expect("Failed to read mol2 db");
+    let mol2_list = read_db_all(filename, shm, desc, comment).expect("Failed to read mol2 db");
     let mut result: Vec<PyObject> = Vec::new();
     for entry in &mol2_list {
         result.push(
@@ -802,13 +839,21 @@ fn read_db_all_serialized(filename: &str, shm: bool, desc: &str) -> PyResult<Vec
     Ok(result)
 }
 
-#[pyfunction(filename, db_name, compression = "3", shm = "true", desc = "\"\"")]
+#[pyfunction(
+    filename,
+    db_name,
+    compression = "3",
+    shm = "true",
+    desc = "\"\"",
+    comment = "\"\""
+)]
 pub fn read_file_to_db(
     filename: &str,
     db_name: &str,
     compression: i32,
     shm: bool,
     desc: &str,
+    comment: &str,
 ) -> PyResult<()> {
     // Convenience function. Read structures from a mol2 file and write directly to the database
     // Input:
@@ -816,7 +861,7 @@ pub fn read_file_to_db(
     //     db_name: path to the database
     //     compression: compression level
     //     shm: should we use the database out of a temporary location
-    let content = match read_file(filename, desc) {
+    let content = match read_file(filename, desc, comment) {
         Ok(c) => c,
         _ => Vec::new(),
     };
@@ -830,7 +875,8 @@ pub fn read_file_to_db(
     compression = "3",
     shm = "true",
     desc = "\"\"",
-    filename_desc = "false"
+    filename_desc = "false",
+    comment = "\"\""
 )]
 pub fn read_file_to_db_batch(
     filenames: Vec<&str>,
@@ -839,6 +885,7 @@ pub fn read_file_to_db_batch(
     shm: bool,
     desc: &str,
     filename_desc: bool,
+    comment: &str,
 ) -> PyResult<()> {
     // Convenience function. Read structures from a set of files directly into the database
     // Input:
@@ -855,12 +902,12 @@ pub fn read_file_to_db_batch(
             description.push_str(
                 std::path::Path::new(filename)
                     .file_name()
-                    .unwrap_or(std::ffi::OsStr::new(filename))
+                    .unwrap_or_else(|| std::ffi::OsStr::new(filename))
                     .to_str()
                     .unwrap_or(filename),
             );
         }
-        let content = match read_file(filename, &description) {
+        let content = match read_file(filename, &description, comment) {
             Ok(c) => c,
             _ => Vec::new(),
         };
@@ -869,8 +916,8 @@ pub fn read_file_to_db_batch(
     Ok(())
 }
 
-#[pyfunction(filename, desc = "\"\"")]
-pub fn read_file(filename: &str, desc: &str) -> PyResult<Vec<Mol2>> {
+#[pyfunction(filename, desc = "\"\"", comment = "\"\"")]
+pub fn read_file(filename: &str, desc: &str, comment: &str) -> PyResult<Vec<Mol2>> {
     // Read a mol2 file and return a vector of structures
     // Input:
     //     filename: path to a mol2 file
@@ -894,6 +941,7 @@ pub fn read_file(filename: &str, desc: &str) -> PyResult<Vec<Mol2>> {
             section_name = section_name.split_whitespace().next().unwrap().to_owned();
             section_index = index;
             if section_name == "MOLECULE" && entry.molecule.is_some() {
+                entry.add_comment(comment);
                 mol2.push(entry);
                 entry = Mol2::new(desc);
             }
@@ -908,18 +956,19 @@ pub fn read_file(filename: &str, desc: &str) -> PyResult<Vec<Mol2>> {
             };
         }
     }
+    entry.add_comment(comment);
     mol2.push(entry); // if we are just at the end of the file
 
     Ok(mol2)
 }
 
-#[pyfunction(filename, desc = "\"\"")]
-fn read_file_serialized(filename: &str, desc: &str) -> PyResult<Vec<PyObject>> {
+#[pyfunction(filename, desc = "\"\"", comment = "\"\"")]
+fn read_file_serialized(filename: &str, desc: &str, comment: &str) -> PyResult<Vec<PyObject>> {
     // Read a mol2 file and return a vector of structures, but
     // serialized python structures rather than a binary form.
     // Input:
     //     filename: path to a mol2 file
-    let mol2_list = read_file(filename, desc).expect("Failed to read mol2 file");
+    let mol2_list = read_file(filename, desc, comment).expect("Failed to read mol2 file");
     let mut result: Vec<PyObject> = Vec::new();
     for entry in &mol2_list {
         result.push(
