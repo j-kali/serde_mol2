@@ -314,7 +314,7 @@ impl Substructure {
 // Struct for holding data for a single structure out of a mol2 file
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Mol2 {
+pub struct Mol2 {
     #[pyo3(get, set)]
     molecule: Option<Molecule>,
     #[pyo3(get, set)]
@@ -637,7 +637,7 @@ fn db_cleanup(filename: &str, db: &rusqlite::Connection) {
 }
 
 #[pyfunction]
-fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
+pub fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
     // Write a vector of mol2 structures to a single mol2 file
     // Input:
     //     mol2_list: vector with structures
@@ -655,7 +655,12 @@ fn write_mol2(mol2_list: Vec<Mol2>, filename: &str) {
 }
 
 #[pyfunction(mol2_list, filename, compression = "3", shm = "true")]
-fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) -> PyResult<()> {
+pub fn db_insert(
+    mol2_list: Vec<Mol2>,
+    filename: &str,
+    compression: i32,
+    shm: bool,
+) -> PyResult<()> {
     // Insert vector of structures into a database. Append if the database exists.
     // Input:
     //     mol2_list: vector of structures
@@ -717,7 +722,7 @@ fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) 
 }
 
 #[pyfunction(filename, shm = "false", desc = "\"\"")]
-fn read_db_all(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<Mol2>> {
+pub fn read_db_all(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<Mol2>> {
     // Read all structures from a database and return as a vector
     // Input:
     //     filename: path to the database
@@ -798,7 +803,7 @@ fn read_db_all_serialized(filename: &str, shm: bool, desc: &str) -> PyResult<Vec
 }
 
 #[pyfunction(filename, db_name, compression = "3", shm = "true", desc = "\"\"")]
-fn read_file_to_db(
+pub fn read_file_to_db(
     filename: &str,
     db_name: &str,
     compression: i32,
@@ -820,7 +825,7 @@ fn read_file_to_db(
 }
 
 #[pyfunction(filenames, db_name, compression = "3", shm = "true", desc = "\"\"")]
-fn read_file_to_db_batch(
+pub fn read_file_to_db_batch(
     filenames: Vec<&str>,
     db_name: &str,
     compression: i32,
@@ -844,7 +849,7 @@ fn read_file_to_db_batch(
 }
 
 #[pyfunction(filename, desc = "\"\"")]
-fn read_file(filename: &str, desc: &str) -> PyResult<Vec<Mol2>> {
+pub fn read_file(filename: &str, desc: &str) -> PyResult<Vec<Mol2>> {
     // Read a mol2 file and return a vector of structures
     // Input:
     //     filename: path to a mol2 file
