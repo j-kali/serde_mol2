@@ -775,7 +775,7 @@ fn read_db_all(filename: &str, shm: bool) -> PyResult<Vec<Mol2>> {
     Ok(mol2_list)
 }
 
-#[pyfunction]
+#[pyfunction(filename, shm = "false")]
 fn read_db_all_serialized(filename: &str, shm: bool) -> PyResult<Vec<PyObject>> {
     // Read all structures from a database and return as a vector, but
     // keep structures in a serialized python form rather than binary.
