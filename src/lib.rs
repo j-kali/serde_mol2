@@ -716,8 +716,8 @@ fn db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: bool) 
     Ok(())
 }
 
-#[pyfunction(filename, shm = "false")]
-fn read_db_all(filename: &str, shm: bool) -> PyResult<Vec<Mol2>> {
+#[pyfunction(filename, shm = "false", desc = "\"\"")]
+fn read_db_all(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<Mol2>> {
     // Read all structures from a database and return as a vector
     // Input:
     //     filename: path to the database
@@ -771,18 +771,21 @@ fn read_db_all(filename: &str, shm: bool) -> PyResult<Vec<Mol2>> {
     for structure in structure_iter {
         mol2_list.push(structure.expect("Failed to get structure after successful extraction...?"));
     }
+    if !desc.is_empty() {
+        mol2_list.retain(|mol2| mol2.desc.as_ref().unwrap_or(&String::new()).contains(desc))
+    }
 
     Ok(mol2_list)
 }
 
-#[pyfunction(filename, shm = "false")]
-fn read_db_all_serialized(filename: &str, shm: bool) -> PyResult<Vec<PyObject>> {
+#[pyfunction(filename, shm = "false", desc = "\"\"")]
+fn read_db_all_serialized(filename: &str, shm: bool, desc: &str) -> PyResult<Vec<PyObject>> {
     // Read all structures from a database and return as a vector, but
     // keep structures in a serialized python form rather than binary.
     // Input:
     //     filename: path to the database
     //     shm: should we try and use the database out of a temporary location?
-    let mol2_list = read_db_all(filename, shm).expect("Failed to read mol2 db");
+    let mol2_list = read_db_all(filename, shm, desc).expect("Failed to read mol2 db");
     let mut result: Vec<PyObject> = Vec::new();
     for entry in &mol2_list {
         result.push(
