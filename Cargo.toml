@@ -1,6 +1,6 @@
 [package]
 name = "serde_mol2"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jaroslaw Kalinowski <jaroslaw.kalinowski@csc.fi>"]
 
@@ -17,11 +17,20 @@ classifier = [
 requires-python = ">=3.8"
 
 [lib]
-crate-type = ["cdylib"]
+name = "serde_mol2"
+path = "src/lib.rs"
+crate-type = [
+  "cdylib",
+  "lib",
+]
+
+[[bin]]
+name = "serde-mol2"
+path = "src/bin/bin.rs"
 
 [dependencies]
 bincode = "1.1.4"
-clap = "2.32.0"
+clap = "3.0.6"
 pyo3 = { version = "0.15", features = ["extension-module", "serde"] }
 rusqlite = { version = "0.26.3", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -7,7 +7,7 @@ Install from [PyPi](https://pypi.org/project/serde-mol2/) (required python >= 3.
 
     pip install serde-mol2
 
-Should be enough. For compilation you're going to need a working `cargo`+`rustup`. After that:
+After that:
 
     -> python3
     Python 3.9.5 (default, Jun  4 2021, 12:28:51)
@@ -17,6 +17,31 @@ Should be enough. For compilation you're going to need a working `cargo`+`rustup
     >>> m = serde_mol2.read_file('example.mol2')
     >>> m
     [<builtins.Mol2 object at 0x7f6da9ebcae0>]
+
+Or using a binary:
+
+    -> serde-mol2 -h
+    serde-mol2 0.2.0
+    CSC - IT Center for Science Ltd. (Jaroslaw Kalinowski <jaroslaw.kalinowski@csc.fi>)
+
+    USAGE:
+        serde-mol2 [OPTIONS]
+
+    OPTIONS:
+        -a, --append                       Append to mol2 files when writing rather than truncate
+        -c, --compression <COMPRESSION>    Level of compression for BLOB data, 0 means no compression
+                                           [default: 3]
+            --comment <COMMENT>            Comment to add/filter to/by the molecule comment field
+            --desc <DESC>                  Description to add/filter to/by entries when writing to the
+                                           database
+            --filename-desc                Add filename to the desc field when adding a batch of files
+                                           to the database
+        -h, --help                         Print help information
+        -i, --input <INPUT_FILE>...        Input mol2 file
+            --no-shm                       Do not try using shm device when writing to databases
+        -o, --output <OUTPUT_FILE>         Output mol2 file
+        -s, --sqlite <SQLITE_FILE>         Sqlite database file
+        -V, --version                      Print version information
 
 ## Usage a.k.a. quick function reference
 

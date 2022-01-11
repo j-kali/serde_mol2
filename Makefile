@@ -25,4 +25,6 @@ build: env
 .ONESHELL:
 dist: env
 	. env/bin/activate
+	docker run --rm -v $(shell pwd):/io konstin2/maturin build --release --strip -b bin
 	docker run --rm -v $(shell pwd):/io konstin2/maturin build --release --strip
+	./join-whl.sh
