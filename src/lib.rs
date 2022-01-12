@@ -809,7 +809,7 @@ pub fn read_db_all(filename: &str, shm: bool, desc: &str, comment: &str) -> Vec<
                 .mol_comment
                 .as_ref()
                 .unwrap_or(&String::new())
-                .contains(desc)
+                .contains(comment)
         });
     }
 
