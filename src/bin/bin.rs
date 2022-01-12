@@ -17,7 +17,7 @@ use clap::{App, Arg};
 
 fn main() {
     let args = App::new("serde-mol2")
-        .version("0.2.1")
+        .version(clap::crate_version!())
         .author(
             "CSC - IT Center for Science Ltd. (Jaroslaw Kalinowski <jaroslaw.kalinowski@csc.fi>)",
         )
