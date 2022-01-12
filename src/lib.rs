@@ -846,6 +846,30 @@ fn read_db_all_serialized(
     Ok(result)
 }
 
+#[pyfunction(filename, shm = "false")]
+pub fn desc_list(filename: &str, shm: bool) -> Vec<String> {
+    // Read all structures from a database and return as a vector
+    // Input:
+    //     filename: path to the database
+    //     shm: should we try and use the database out of a temporary location?
+    let db = get_db(filename, shm);
+    let mut stmt = db
+        .prepare("SELECT desc FROM structures")
+        .expect("Failed to fetch from the database");
+    let desc_iter = stmt
+        .query_map([], |row| Ok(row.get(0).unwrap()))
+        .expect("Failed to fetch exact numbers from db");
+    let mut desc_list: Vec<String> = Vec::new();
+    for desc in desc_iter {
+        desc_list.push(desc.expect("Failed to get desc after successful extraction...?"));
+    }
+
+    desc_list.sort();
+    desc_list.dedup();
+
+    desc_list
+}
+
 pub fn read_file_to_db(
     filename: &str,
     db_name: &str,
@@ -1033,6 +1057,7 @@ fn serde_mol2(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(py_read_file_to_db))?;
     m.add_wrapped(wrap_pyfunction!(py_read_file_to_db_batch))?;
     m.add_wrapped(wrap_pyfunction!(write_mol2))?;
+    m.add_wrapped(wrap_pyfunction!(desc_list))?;
 
     Ok(())
 }

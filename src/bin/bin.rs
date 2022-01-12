@@ -85,6 +85,11 @@ fn main() {
                 "Add filename to the desc field when adding a batch of files to the database",
             ),
         )
+        .arg(
+            Arg::new("list_desc")
+                .long("list-desc")
+                .help("List available row descriptions present in the database"),
+        )
         .get_matches();
 
     // different variants I guess... might be a long tree of if's. Hopefully later will make it nicer
@@ -139,5 +144,17 @@ fn main() {
                 .expect("Missing output file argument after all"),
             args.is_present("append"),
         );
+    }
+
+    // At the end list available desc fields if requested
+    if args.is_present("list_desc") && args.is_present("sqlite") {
+        let desc_list = serde_mol2::desc_list(
+            args.value_of("sqlite")
+                .expect("Missing sqlite db filename after all..."),
+            !args.is_present("no_shm"),
+        );
+        for desc in desc_list {
+            println!("{}", desc);
+        }
     }
 }
