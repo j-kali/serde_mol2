@@ -28,3 +28,12 @@ dist: env
 	docker run --rm -v $(shell pwd):/io konstin2/maturin build --release --strip -b bin
 	docker run --rm -v $(shell pwd):/io konstin2/maturin build --release --strip
 	./join-whl.sh
+
+target/release/serde-mol2:
+	cargo build --release
+
+.PHONY: test
+.ONESHELL:
+test: target/release/serde-mol2 develop
+	. env/bin/activate
+	./test.sh
