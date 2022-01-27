@@ -21,7 +21,7 @@ After that:
 Or using a binary:
 
     -> serde-mol2 -h
-    serde-mol2 0.2.0
+    serde-mol2 0.2.2
     CSC - IT Center for Science Ltd. (Jaroslaw Kalinowski <jaroslaw.kalinowski@csc.fi>)
 
     USAGE:
@@ -38,8 +38,13 @@ Or using a binary:
                                            to the database
         -h, --help                         Print help information
         -i, --input <INPUT_FILE>...        Input mol2 file
+            --limit <LIMIT>                Limit the number of structures retrieved from the database.
+                                           Zero means no limit. [default: 0]
+            --list-desc                    List available row descriptions present in the database
             --no-shm                       Do not try using shm device when writing to databases
         -o, --output <OUTPUT_FILE>         Output mol2 file
+            --offset <OFFSET>              Offset when limiting the number of structures retrieved from
+                                           the database. Zero means no offset. [default: 0]
         -s, --sqlite <SQLITE_FILE>         Sqlite database file
         -V, --version                      Print version information
 
@@ -79,7 +84,7 @@ Or using a binary:
   * _compression_: compression level
   * _shm_: should be try and use a database out from a temporary location?
 
-- read_db_all( _filename_, _shm=False_, _desc=None_, _comment=None_ )
+- read_db_all( _filename_, _shm=False_, _desc=None_, _comment=None_, _limit=0_, _offset=0_ )
 
   Read all structures from a database and return as a vector
 
@@ -88,8 +93,10 @@ Or using a binary:
   * _shm_: should we try and use the database out of a temporary location?
   * _desc_: return only entries containing _desc_ in the _desc_ field
   * _comment_: return only entries containing _comment_ in the molecule comment
+  * _limit_: Limit the number of structures retrieved from the database and zero means no limit
+  * __offset_: Offset when limiting the number of structures retrieved from the database and zero means no offset
 
-- read_db_all_serialized( _filename_, _shm=True_, _desc=None_, _comment=None_ )
+- read_db_all_serialized( _filename_, _shm=True_, _desc=None_, _comment=None_, _limit=0_, _offset=0_ )
 
   Read all structures from a database and return as a vector, but
   keep structures in a serialized python form rather than binary.
@@ -99,6 +106,8 @@ Or using a binary:
   * _shm_: should we try and use the database out of a temporary location?
   * _desc_: return only entries containing _desc_ in the _desc_ field
   * _comment_: return only entries containing _comment_ in the molecule comment
+  * _limit_: Limit the number of structures retrieved from the database and zero means no limit
+  * __offset_: Offset when limiting the number of structures retrieved from the database and zero means no offset
 
 - read_file_to_db( _filename_, _db-filename_, _compression=3_, _shm=True_ , _desc=None_, _comment=None_ )
 

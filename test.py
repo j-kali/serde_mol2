@@ -9,7 +9,7 @@ def main(args):
         serde_mol2.read_file_to_db_batch(args.input, args.sqlite, shm = not args.no_shm, desc = args.desc, comment = args.comment, compression = int(args.compress))
 
     if args.output and args.sqlite:
-        m = serde_mol2.read_db_all(args.sqlite, desc = args.desc, comment = args.comment)
+        m = serde_mol2.read_db_all(args.sqlite, desc = args.desc, comment = args.comment, limit = int(args.limit), offset = int(args.offset))
         serde_mol2.write_mol2(m, args.output)
 
     if args.list_desc and args.sqlite:
@@ -39,6 +39,16 @@ if __name__ == "__main__":
         '--compress',
         default='3',
         help="Sqlite database to write to"
+    )
+    parser.add_argument(
+        '--limit',
+        default='0',
+        help="Limit the number of structures retrieved from the database. Zero means no limit."
+    )
+    parser.add_argument(
+        '--offset',
+        default='0',
+        help="Offset when limiting the number of structures retrieved from the database. Zero means no offset."
     )
     parser.add_argument(
         '--no-shm',

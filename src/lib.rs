@@ -744,13 +744,29 @@ fn py_db_insert(mol2_list: Vec<Mol2>, filename: &str, compression: i32, shm: boo
     db_insert(mol2_list, filename, compression, shm)
 }
 
-pub fn read_db_all(filename: &str, shm: bool, desc: &str, comment: &str) -> Vec<Mol2> {
+pub fn read_db_all(
+    filename: &str,
+    shm: bool,
+    desc: &str,
+    comment: &str,
+    limit: usize,
+    offset: usize,
+) -> Vec<Mol2> {
     // Read all structures from a database and return as a vector
     // Input:
     //     filename: path to the database
     //     shm: should we try and use the database out of a temporary location?
     let db = get_db(filename, shm);
-    let mut stmt = db.prepare("SELECT mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression, desc FROM structures").expect("Failed to fetch from the database");
+    let mut query = "SELECT mol_name, num_atoms, num_bonds, num_subst, num_feat, num_sets, mol_type, charge_type, status_bits, mol_comment, atom, bond, substructure, compression, desc FROM structures".to_owned();
+    if limit > 0 {
+        query.push_str(&format!(" LIMIT {}", limit)[..]);
+        if offset > 0 {
+            query.push_str(&format!(" OFFSET {}", offset)[..]);
+        }
+    }
+    let mut stmt = db
+        .prepare(&query)
+        .expect("Failed to fetch from the database");
     let structure_iter = stmt
         .query_map([], |row| {
             let compression: i32 = row.get(13).unwrap();
@@ -816,25 +832,48 @@ pub fn read_db_all(filename: &str, shm: bool, desc: &str, comment: &str) -> Vec<
     mol2_list
 }
 
-#[pyfunction(filename, shm = "false", desc = "\"\"", comment = "\"\"")]
+#[pyfunction(
+    filename,
+    shm = "false",
+    desc = "\"\"",
+    comment = "\"\"",
+    limit = "0",
+    offset = "0"
+)]
 #[pyo3(name = "read_db_all")]
-fn py_read_db_all(filename: &str, shm: bool, desc: &str, comment: &str) -> Vec<Mol2> {
-    read_db_all(filename, shm, desc, comment)
+fn py_read_db_all(
+    filename: &str,
+    shm: bool,
+    desc: &str,
+    comment: &str,
+    limit: usize,
+    offset: usize,
+) -> Vec<Mol2> {
+    read_db_all(filename, shm, desc, comment, limit, offset)
 }
 
-#[pyfunction(filename, shm = "false", desc = "\"\"", comment = "\"\"")]
+#[pyfunction(
+    filename,
+    shm = "false",
+    desc = "\"\"",
+    comment = "\"\"",
+    limit = "0",
+    offset = "0"
+)]
 fn read_db_all_serialized(
     filename: &str,
     shm: bool,
     desc: &str,
     comment: &str,
+    limit: usize,
+    offset: usize,
 ) -> PyResult<Vec<PyObject>> {
     // Read all structures from a database and return as a vector, but
     // keep structures in a serialized python form rather than binary.
     // Input:
     //     filename: path to the database
     //     shm: should we try and use the database out of a temporary location?
-    let mol2_list = read_db_all(filename, shm, desc, comment);
+    let mol2_list = read_db_all(filename, shm, desc, comment, limit, offset);
     let mut result: Vec<PyObject> = Vec::new();
     for entry in &mol2_list {
         result.push(

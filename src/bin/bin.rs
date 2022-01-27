@@ -81,6 +81,22 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
+            Arg::new("limit")
+                .long("limit")
+                .value_name("LIMIT")
+                .default_value("0")
+                .help("Limit the number of structures retrieved from the database. Zero means no limit.")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::new("offset")
+                .long("offset")
+                .value_name("OFFSET")
+                .default_value("0")
+                .help("Offset when limiting the number of structures retrieved from the database. Zero means no offset.")
+                .takes_value(true),
+        )
+        .arg(
             Arg::new("filename_desc").long("filename-desc").help(
                 "Add filename to the desc field when adding a batch of files to the database",
             ),
@@ -137,6 +153,14 @@ fn main() {
             !args.is_present("no_shm"),
             args.value_of("desc").unwrap_or(""),
             args.value_of("comment").unwrap_or(""),
+            args.value_of("limit")
+                .expect("Missing limit...")
+                .parse::<usize>()
+                .expect("Failed to parse --limit"),
+            args.value_of("offset")
+                .expect("Missing offset...")
+                .parse::<usize>()
+                .expect("Failed to parse --offset"),
         );
         serde_mol2::write_mol2(
             mol2_list,
