@@ -152,6 +152,14 @@ Or using a binary:
   * _desc_: add this description to structures read
   * _comment_: add this comment to the molecule comment field
 
+- desc_list( _filename_, _shm=False_ )
+
+  List unique entry descriptions found in a database.
+
+  Input:
+  * _filename_: path to a database
+  * _shm_: should we use the database out of a temporary location?
+
 ### Notes
 
 #### Compression
